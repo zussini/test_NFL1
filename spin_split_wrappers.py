@@ -4,9 +4,15 @@ import math
 
 # Import core objective functions and entropy from the main module
 from chartformat_freeenergy_SPIN_ALMOST_Correct_Magnetization_Entropy3 import (
-    func_FD, func_deriv_FD, cons_FD,
-    func_FLB, func_deriv_FLB, cons_FLB,
-    func_NFL, func_deriv_NFL, cons_NFL,
+    func_FD,
+    func_deriv_FD,
+    cons_FD,
+    func_FLB,
+    func_deriv_FLB,
+    cons_FLB,
+    func_NFL,
+    func_deriv_NFL,
+    cons_NFL,
     entropy_k_point,
 )
 
@@ -204,5 +210,136 @@ def compute_total_entropy_split(T, h, mu, L, t_up, tp_up, t_dn, tp_dn, a, distri
 
     weight = (2*math.pi / L)**2 / (2*math.pi)**2
     return total_entropy * weight
+
+
+def _safe_q_sigma(n_total, n_sigma, eps=1e-8):
+    """Compute q_sigma = (1-n)/(1-n_sigma) with guards near the poles."""
+    denominator = 1.0 - n_sigma
+    if abs(denominator) < eps:
+        denominator = eps if denominator >= 0 else -eps
+    numerator = 1.0 - n_total
+    return numerator / denominator
+
+
+def one_state_split_self_consistent(
+    dist,
+    T,
+    n_target,
+    h,
+    kx,
+    ky,
+    t_up_base,
+    tp_up_base,
+    t_dn_base,
+    tp_dn_base,
+    a=1.0,
+    max_iter=50,
+    tol=1e-6,
+    damping=0.5,
+    q_bounds=(0.05, 5.0),
+):
+    """Iterate q_sigma and renormalize the hoppings until convergence.
+
+    Parameters
+    ----------
+    t_*_base : float
+        Bare hoppings that will be multiplied by q_sigma each iteration.
+    q_bounds : tuple[float, float]
+        Hard bounds applied to q_sigma to avoid runaway solutions.
+    """
+
+    q_min, q_max = q_bounds
+    # Start from the provided base hoppings (q = 1 by default).
+    q_up = 1.0
+    q_dn = 1.0
+    t_up_eff = t_up_base
+    tp_up_eff = tp_up_base
+    t_dn_eff = t_dn_base
+    tp_dn_eff = tp_dn_base
+
+    last_result = None
+    converged = False
+
+    for iteration in range(1, max_iter + 1):
+        last_result = one_state_split(
+            dist,
+            T,
+            n_target,
+            h,
+            kx,
+            ky,
+            t_up_eff,
+            tp_up_eff,
+            t_dn_eff,
+            tp_dn_eff,
+            a,
+        )
+
+        n_up = last_result["n_up"]
+        n_dn = last_result["n_down"]
+        n_total = n_up + n_dn
+
+        q_up_new = _safe_q_sigma(n_total, n_up)
+        q_dn_new = _safe_q_sigma(n_total, n_dn)
+
+        # Clamp to physically reasonable bounds.
+        q_up_new = float(np.clip(q_up_new, q_min, q_max))
+        q_dn_new = float(np.clip(q_dn_new, q_min, q_max))
+
+        delta = max(abs(q_up_new - q_up), abs(q_dn_new - q_dn))
+        if delta < tol:
+            q_up = q_up_new
+            q_dn = q_dn_new
+            converged = True
+            break
+
+        # Apply simple linear damping to stabilise the iteration.
+        q_up = (1.0 - damping) * q_up + damping * q_up_new
+        q_dn = (1.0 - damping) * q_dn + damping * q_dn_new
+
+        t_up_eff = t_up_base * q_up
+        tp_up_eff = tp_up_base * q_up
+        t_dn_eff = t_dn_base * q_dn
+        tp_dn_eff = tp_dn_base * q_dn
+
+    if last_result is None:
+        raise RuntimeError("one_state_split_self_consistent failed to execute iterations")
+
+    # Ensure the final hoppings reflect the last q update (including converged case).
+    t_up_eff = t_up_base * q_up
+    tp_up_eff = tp_up_base * q_up
+    t_dn_eff = t_dn_base * q_dn
+    tp_dn_eff = tp_dn_base * q_dn
+
+    # Recompute the state with the final effective hoppings to keep μ and n consistent.
+    final_result = one_state_split(
+        dist,
+        T,
+        n_target,
+        h,
+        kx,
+        ky,
+        t_up_eff,
+        tp_up_eff,
+        t_dn_eff,
+        tp_dn_eff,
+        a,
+    )
+
+    enriched_result = dict(final_result)
+    enriched_result.update(
+        {
+            "q_up": q_up,
+            "q_down": q_dn,
+            "t_up_eff": t_up_eff,
+            "tp_up_eff": tp_up_eff,
+            "t_down_eff": t_dn_eff,
+            "tp_down_eff": tp_dn_eff,
+            "sc_iterations": iteration if last_result is not None else 0,
+            "sc_converged": converged,
+        }
+    )
+
+    return enriched_result
 
 
