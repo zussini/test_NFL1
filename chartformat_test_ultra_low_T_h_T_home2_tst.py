@@ -34,6 +34,7 @@ from chartformat_freeenergy_SPIN_ALMOST_Correct_Magnetization_Entropy3 import (
 from spin_split_wrappers import (
     one_state_split,
     compute_total_entropy_split,
+    one_state_split_self_consistent,
 )
 import numpy as np
 import pandas as pd
@@ -53,6 +54,14 @@ CONFIG = {
         'enabled': USE_PARALLEL,
         'n_cores': N_CORES,
         'chunk_size': 1,  # Number of tasks per worker (can be optimized)
+    },
+    'self_consistency': {
+        'enabled': True,
+        'max_iter': 50,
+        'tol': 1e-6,
+        'damping': 0.5,
+        'q_bounds': (0.05, 5.0),
+        'fallback_on_failure': True,
     },
     'testing': {
         'run_test': False,  # Set to True to run parallel implementation test
@@ -972,37 +981,124 @@ def collect_thermo_data_parallel(temperatures, h_values, n_targets, distribution
     
     return thermo_data, distribution_data if 'distribution_data' in locals() else []
 
+
+def solve_spin_split_state(dist, T, n_target, h, kx, ky, t_up, tp_up, t_dn, tp_dn, a):
+    """Solve a spin-split state, optionally enforcing q_σ self-consistency."""
+    sc_cfg = CONFIG.get('self_consistency', {})
+    sc_enabled = sc_cfg.get('enabled', False)
+
+    if sc_enabled:
+        try:
+            result = one_state_split_self_consistent(
+                dist,
+                T,
+                n_target,
+                h,
+                kx,
+                ky,
+                t_up,
+                tp_up,
+                t_dn,
+                tp_dn,
+                a=a,
+                max_iter=sc_cfg.get('max_iter', 50),
+                tol=sc_cfg.get('tol', 1e-6),
+                damping=sc_cfg.get('damping', 0.5),
+                q_bounds=sc_cfg.get('q_bounds', (0.05, 5.0)),
+            )
+            if result.get('sc_converged', True) or not sc_cfg.get('fallback_on_failure', True):
+                return result
+            else:
+                print(
+                    "          Warning: self-consistent q_σ solver did not converge;"
+                    " falling back to fixed hoppings."
+                )
+        except Exception as exc:
+            if sc_cfg.get('fallback_on_failure', True):
+                print(f"          Warning: self-consistent q_σ solver failed ({exc}); reverting to fixed hoppings.")
+            else:
+                raise
+
+    base_result = one_state_split(dist, T, n_target, h, kx, ky, t_up, tp_up, t_dn, tp_dn, a)
+    # Annotate with neutral self-consistency metadata for downstream consumers.
+    base_result.update(
+        {
+            'q_up': 1.0,
+            'q_down': 1.0,
+            't_up_eff': t_up,
+            'tp_up_eff': tp_up,
+            't_down_eff': t_dn,
+            'tp_down_eff': tp_dn,
+            'sc_iterations': 0,
+            'sc_converged': False if sc_enabled else None,
+        }
+    )
+    return base_result
+
 def worker_thermo_data(args):
     """
     Worker function for parallel thermodynamic data collection.
     Each worker processes one (distribution, T, n_target, h) combination.
     """
     dist, T, n_target, h, Nk, t, tp, a, t_up, tp_up, t_dn, tp_dn = args
-    
+
     try:
         # Create k-space grid
         kx = np.linspace(0, 2 * np.pi, Nk, endpoint=False)
         ky = kx.copy()
-        
-        # Solve for this state using SEQUENTIAL version (not parallel to avoid daemonic process error)
-        result = one_state_split(dist, T, n_target, h, kx, ky, t_up, tp_up, t_dn, tp_dn, a)
+
+        result = solve_spin_split_state(
+            dist,
+            T,
+            n_target,
+            h,
+            kx,
+            ky,
+            t_up,
+            tp_up,
+            t_dn,
+            tp_dn,
+            a,
+        )
         mu = result['mu']
         n_up = result['n_up']
         n_down = result['n_down']
-        
+        t_up_eff = result.get('t_up_eff', t_up)
+        tp_up_eff = result.get('tp_up_eff', tp_up)
+        t_dn_eff = result.get('t_down_eff', t_dn)
+        tp_dn_eff = result.get('tp_down_eff', tp_dn)
+
         # Calculate magnetization M = n_up - n_down
         magnetization = n_up - n_down
-        
+
         # Compute entropy using SEQUENTIAL version (not parallel to avoid daemonic process error)
-        entropy = compute_total_entropy_split(T, h, mu, Nk, t_up, tp_up, t_dn, tp_dn, a, dist, n_target)
-        
+        entropy = compute_total_entropy_split(
+            T,
+            h,
+            mu,
+            Nk,
+            t_up_eff,
+            tp_up_eff,
+            t_dn_eff,
+            tp_dn_eff,
+            a,
+            dist,
+            n_target,
+        )
+
         # Print detailed information for this completed calculation
         if CONFIG['performance']['detailed_output']:
             print(f"        Distribution: {dist}")
             print(f"          T = {T:.6f}, h = {h:.8f}, n = {n_target:.2f}, n_init = [{n_target/2:.2f},{n_target/2:.2f}]")
             print(f"          μ = {mu:.6f}, S = {entropy:.6f}, M = {magnetization:.6f}")
             print(f"          n_up = {n_up:.6f}, n_down = {n_down:.6f}")
-        
+            if result.get('sc_converged') is not None:
+                status = '✓' if result.get('sc_converged') else '✗'
+                print(
+                    f"          q_up = {result.get('q_up', 1.0):.6f}, q_down = {result.get('q_down', 1.0):.6f}"
+                    f" (self-consistent {status}, iterations = {result.get('sc_iterations', 0)})"
+                )
+
         return {
             'f': dist,
             'T': T,
@@ -1013,8 +1109,16 @@ def worker_thermo_data(args):
             'n_down': n_down,
             'M': magnetization,
             'S': entropy,
+            'q_up': result.get('q_up'),
+            'q_down': result.get('q_down'),
+            't_up_eff': t_up_eff,
+            'tp_up_eff': tp_up_eff,
+            't_down_eff': t_dn_eff,
+            'tp_down_eff': tp_dn_eff,
+            'sc_converged': result.get('sc_converged'),
+            'sc_iterations': result.get('sc_iterations'),
         }
-        
+
     except Exception as e:
         print(f"Error processing {dist}, T={T}, n={n_target}, h={h}: {e}")
         return None
@@ -1079,14 +1183,42 @@ else:
                     ky = kx.copy()
                     
                     # Solve for this state
-                    result = one_state_split(dist, T, n_target, h, kx, ky, t_up, tp_up, t_dn, tp_dn, 1.0)
+                    result = solve_spin_split_state(
+                        dist,
+                        T,
+                        n_target,
+                        h,
+                        kx,
+                        ky,
+                        t_up,
+                        tp_up,
+                        t_dn,
+                        tp_dn,
+                        1.0,
+                    )
                     mu = result['mu']
                     n_up = result['n_up']
                     n_down = result['n_down']
-                    
+                    t_up_eff = result.get('t_up_eff', t_up)
+                    tp_up_eff = result.get('tp_up_eff', tp_up)
+                    t_dn_eff = result.get('t_down_eff', t_dn)
+                    tp_dn_eff = result.get('tp_down_eff', tp_dn)
+
                     # Compute entropy
-                    entropy = compute_total_entropy_split(T, h, mu, Nk_test, t_up, tp_up, t_dn, tp_dn, 1.0, dist, n_target)
-                
+                    entropy = compute_total_entropy_split(
+                        T,
+                        h,
+                        mu,
+                        Nk_test,
+                        t_up_eff,
+                        tp_up_eff,
+                        t_dn_eff,
+                        tp_dn_eff,
+                        1.0,
+                        dist,
+                        n_target,
+                    )
+
                     # Store results
                     thermo_data.append({
                         'f': dist,
@@ -1098,6 +1230,14 @@ else:
                         'n_down': n_down,
                         'S': entropy,
                         'M': n_up - n_down,  # Add magnetization calculation
+                        'q_up': result.get('q_up'),
+                        'q_down': result.get('q_down'),
+                        't_up_eff': t_up_eff,
+                        'tp_up_eff': tp_up_eff,
+                        't_down_eff': t_dn_eff,
+                        'tp_down_eff': tp_dn_eff,
+                        'sc_converged': result.get('sc_converged'),
+                        'sc_iterations': result.get('sc_iterations'),
                     })
                     
                     # Store distribution data for plotting
@@ -2029,15 +2169,23 @@ def create_broken_axis_magnetization_plot(df_thermo, output_dir, broken_axis_cas
 
 # Helper: compute a single inset M value (top-level for safe multiprocessing)
 def _compute_inset_M_single(args):
-    dist, T_val, n_target, h_val, Nk_inset, t, tp, a = args
+    dist, T_val, n_target, h_val, Nk_inset, t_up, tp_up, t_dn, tp_dn, a = args
     try:
-        try:
-            one_state  # noqa: F821
-        except NameError:
-            from chartformat_freeenergy_SPIN_ALMOST_Correct_Magnetization_Entropy3 import one_state  # type: ignore
         kx = np.linspace(0, 2 * np.pi, Nk_inset, endpoint=False)
         ky = kx.copy()
-        res = one_state(dist, T_val, n_target, h_val, kx, ky, t, tp, a)
+        res = solve_spin_split_state(
+            dist,
+            T_val,
+            n_target,
+            h_val,
+            kx,
+            ky,
+            t_up,
+            tp_up,
+            t_dn,
+            tp_dn,
+            a,
+        )
         return res['n_up'] - res['n_down']
     except Exception:
         return np.nan
@@ -2052,6 +2200,10 @@ def create_broken_axis_magnetization_plot_with_inset(
     Nk_inset=Nk_inset,
     t=-1.0,
     tp=0.25,
+    t_up=None,
+    tp_up=None,
+    t_dn=None,
+    tp_dn=None,
     a=1.0,
     inset_distributions=None,
     inset_position=(0.66, 0.62, 0.22, 0.18),
@@ -2067,11 +2219,15 @@ def create_broken_axis_magnetization_plot_with_inset(
     try:
         from brokenaxes import brokenaxes
         from matplotlib.ticker import MaxNLocator, ScalarFormatter, FuncFormatter
-        # Ensure one_state is in scope
-        try:
-            one_state  # noqa: F821
-        except NameError:
-            from chartformat_freeenergy_SPIN_ALMOST_Correct_Magnetization_Entropy3 import one_state  # type: ignore
+
+        if t_up is None:
+            t_up = t
+        if tp_up is None:
+            tp_up = tp
+        if t_dn is None:
+            t_dn = t_up
+        if tp_dn is None:
+            tp_dn = tp_up
 
         # Filter data for these cases
         plot_data = []
@@ -2218,7 +2374,21 @@ def create_broken_axis_magnetization_plot_with_inset(
                         from concurrent.futures import ProcessPoolExecutor, as_completed
                         workers = max_workers
                         print(f"      Inset: parallel mode (workers={workers if workers else 'auto'}) for T={T_val:.6g}, dist={dist}")
-                        args_iter = [(dist, T_val, n_target, h_val, Nk_inset, t, tp, a) for h_val in h_inset]
+                        args_iter = [
+                            (
+                                dist,
+                                T_val,
+                                n_target,
+                                h_val,
+                                Nk_inset,
+                                t_up,
+                                tp_up,
+                                t_dn,
+                                tp_dn,
+                                a,
+                            )
+                            for h_val in h_inset
+                        ]
                         M_inset = [np.nan] * len(h_inset)
                         with ProcessPoolExecutor(max_workers=workers) as ex:
                             futures = {ex.submit(_compute_inset_M_single, args): idx for idx, args in enumerate(args_iter)}
@@ -2241,7 +2411,21 @@ def create_broken_axis_magnetization_plot_with_inset(
                     total = len(h_inset)
                     for i_idx, h_val in enumerate(h_inset, start=1):
                         try:
-                            res = one_state(dist, T_val, n_target, h_val, np.linspace(0, 2 * np.pi, Nk_inset, endpoint=False), np.linspace(0, 2 * np.pi, Nk_inset, endpoint=False), t, tp, a)
+                            kx = np.linspace(0, 2 * np.pi, Nk_inset, endpoint=False)
+                            ky = kx.copy()
+                            res = solve_spin_split_state(
+                                dist,
+                                T_val,
+                                n_target,
+                                h_val,
+                                kx,
+                                ky,
+                                t_up,
+                                tp_up,
+                                t_dn,
+                                tp_dn,
+                                a,
+                            )
                             M_inset.append(res['n_up'] - res['n_down'])
                         except Exception:
                             M_inset.append(np.nan)
@@ -2337,8 +2521,18 @@ def create_all_broken_axis_plots(df_thermo, output_dir, broken_axis_cases_pairs)
         # Create broken axis plot for this pair
         # create_broken_axis_magnetization_plot(df_thermo, output_dir, temperature_pair)
         create_broken_axis_magnetization_plot_with_inset(
-            df_thermo, output_dir, temperature_pair,
-            use_parallel_inset=True, max_workers=32, inset_T_only=T2
+            df_thermo,
+            output_dir,
+            temperature_pair,
+            use_parallel_inset=True,
+            max_workers=32,
+            inset_T_only=T2,
+            t=t,
+            tp=tp,
+            t_up=t_up,
+            tp_up=tp_up,
+            t_dn=t_dn,
+            tp_dn=tp_dn,
         )
         
         # Rename the file to include temperature pair and n info
