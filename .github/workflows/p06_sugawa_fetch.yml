@@ -22,54 +22,75 @@ jobs:
         with:
           ref: tmp/p06-sugawa-fetch-20260818
 
-      - name: Fetch and validate public supplementary data
+      - name: Fetch and validate public supplementary data from PMC AWS
         shell: bash
         run: |
           set -euo pipefail
           rm -rf artifacts work
           mkdir -p artifacts work
 
-          direct_urls=(
-            "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/bin/NIHMS1516098-supplement-Dat.zip"
-            "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6561486/bin/NIHMS1516098-supplement-Dat.zip"
+          bucket="pmc-oa-opendata"
+          prefix="$(aws s3api list-objects-v2 --bucket "$bucket" --prefix 'PMC6561486.' --delimiter '/' --query 'CommonPrefixes[0].Prefix' --output text --no-sign-request)"
+          if [[ -z "$prefix" || "$prefix" == "None" ]]; then
+            echo "No PMC article-version prefix found" >&2
+            exit 1
+          fi
+          printf '%s\n' "$prefix" > artifacts/article_prefix.txt
+
+          aws s3api list-objects-v2 --bucket "$bucket" --prefix "$prefix" --output json --no-sign-request > artifacts/s3_objects.json
+          aws s3 ls "s3://$bucket/$prefix" --no-sign-request > artifacts/s3_inventory.txt
+
+          version="${prefix%/}"
+          aws s3 cp "s3://$bucket/metadata/${version}.json" artifacts/article_metadata.json --no-sign-request
+          aws s3 cp "s3://$bucket/${prefix}${version}.xml" artifacts/article.xml --no-sign-request
+
+          mapfile -t zip_keys < <(python - <<'PY'
+          import json
+          data=json.load(open('artifacts/article_metadata.json'))
+          for item in data.get('media_urls', []):
+              url=item.get('url') if isinstance(item, dict) else item
+              if isinstance(url, str) and url.lower().endswith('.zip'):
+                  marker='s3://pmc-oa-opendata/'
+                  print(url.split(marker,1)[1].split('?',1)[0] if marker in url else url)
+          PY
           )
 
-          found=0
-          for url in "${direct_urls[@]}"; do
-            echo "Trying $url" | tee -a artifacts/fetch.log
-            if curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
-              -A "P06-Sugawa-open-data-pilot/1.0" \
-              -D work/headers.txt "$url" -o work/data_candidate.zip; then
-              if unzip -t work/data_candidate.zip >/dev/null 2>&1; then
-                cp work/data_candidate.zip artifacts/NIHMS1516098-supplement-Dat.zip
-                cp work/headers.txt artifacts/direct_download_headers.txt
-                printf '%s\n' "$url" > artifacts/source_url.txt
-                found=1
-                break
+          if [[ "${#zip_keys[@]}" -eq 0 ]]; then
+            mapfile -t zip_keys < <(python - <<'PY'
+          import json
+          data=json.load(open('artifacts/s3_objects.json'))
+          for obj in data.get('Contents', []):
+              key=obj['Key']
+              if key.lower().endswith('.zip'):
+                  print(key)
+          PY
+          )
+          fi
+
+          if [[ "${#zip_keys[@]}" -eq 0 ]]; then
+            echo "No ZIP supplementary object found" >&2
+            cat artifacts/article_metadata.json >&2
+            exit 1
+          fi
+
+          selected=""
+          for key in "${zip_keys[@]}"; do
+            name="$(basename "$key")"
+            aws s3 cp "s3://$bucket/$key" "work/$name" --no-sign-request
+            if unzip -t "work/$name" >/dev/null 2>&1; then
+              if [[ "$name" == *Dat* || -z "$selected" ]]; then
+                selected="work/$name"
               fi
             fi
           done
 
-          if [[ "$found" -eq 0 ]]; then
-            epmc="https://www.ebi.ac.uk/europepmc/webservices/rest/PMC6561486/supplementaryFiles"
-            echo "Trying $epmc" | tee -a artifacts/fetch.log
-            curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
-              -A "P06-Sugawa-open-data-pilot/1.0" \
-              -D work/europepmc_headers.txt "$epmc" -o work/all_supplements.zip
-            unzip -t work/all_supplements.zip
-            mkdir -p work/all_supplements
-            unzip -q work/all_supplements.zip -d work/all_supplements
-            candidate="$(find work/all_supplements -type f -name 'NIHMS1516098-supplement-Dat.zip' -print -quit)"
-            if [[ -z "$candidate" ]]; then
-              echo "Data ZIP not found inside Europe PMC bundle" >&2
-              find work/all_supplements -maxdepth 4 -type f -printf '%P\n' | sort >&2
-              exit 1
-            fi
-            cp "$candidate" artifacts/NIHMS1516098-supplement-Dat.zip
-            cp work/europepmc_headers.txt artifacts/europepmc_download_headers.txt
-            printf '%s\n' "$epmc" > artifacts/source_url.txt
+          if [[ -z "$selected" ]]; then
+            echo "No valid ZIP archive found" >&2
+            exit 1
           fi
 
+          cp "$selected" artifacts/NIHMS1516098-supplement-Dat.zip
+          printf 's3://%s/%s%s\n' "$bucket" "$prefix" "$(basename "$selected")" > artifacts/source_url.txt
           unzip -t artifacts/NIHMS1516098-supplement-Dat.zip
           unzip -l artifacts/NIHMS1516098-supplement-Dat.zip > artifacts/data_zip_inventory.txt
           sha256sum artifacts/NIHMS1516098-supplement-Dat.zip > artifacts/NIHMS1516098-supplement-Dat.zip.sha256
