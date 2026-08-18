@@ -1,0 +1,110 @@
+[
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/nihms-1516098.pdf",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/bin/nihms-1516098.pdf",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/nihms-1516098.pdf",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/bin/nihms-1516098.pdf",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6561486/bin/nihms-1516098.pdf",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/NIHMS1516098-supplement-Dat.zip",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/bin/NIHMS1516098-supplement-Dat.zip",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/NIHMS1516098-supplement-Dat.zip",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/bin/NIHMS1516098-supplement-Dat.zip",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8",
+    "bytes": 1817,
+    "final_url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/bin/NIHMS1516098-supplement-Dat.zip",
+    "valid_zip": false
+  },
+  {
+    "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6561486/bin/NIHMS1516098-supplement-Dat.zip",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/NIHMS1516098-supplement-Sup.pdf",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/bin/NIHMS1516098-supplement-Sup.pdf",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/NIHMS1516098-supplement-Sup.pdf",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/bin/NIHMS1516098-supplement-Sup.pdf",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8",
+    "bytes": 1817,
+    "final_url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/bin/NIHMS1516098-supplement-Sup.pdf",
+    "valid_zip": false
+  },
+  {
+    "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6561486/bin/NIHMS1516098-supplement-Sup.pdf",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "http://www.sciencemag.org/content/360/6396/1429/suppl/DC1",
+    "error": "HTTPError: HTTP Error 403: Forbidden"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/DC1",
+    "error": "HTTPError: HTTP Error 404: Not Found"
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/bin/DC1",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8",
+    "bytes": 21262,
+    "final_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/bin/DC1",
+    "valid_zip": false
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/DC1",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8",
+    "bytes": 21270,
+    "final_url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/DC1",
+    "valid_zip": false
+  },
+  {
+    "url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/bin/DC1",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8",
+    "bytes": 21282,
+    "final_url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/6561486/bin/DC1",
+    "valid_zip": false
+  },
+  {
+    "url": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6561486/bin/DC1",
+    "status": 200,
+    "content_type": "text/html; charset=utf-8",
+    "bytes": 21265,
+    "final_url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/bin/DC1",
+    "valid_zip": false
+  }
+]

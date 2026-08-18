@@ -1,0 +1,26 @@
+[
+  {
+    "tag": "self-uri",
+    "id": null,
+    "attribute": "{http://www.w3.org/1999/xlink}href",
+    "value": "nihms-1516098.pdf"
+  },
+  {
+    "tag": "media",
+    "id": "d36e3720",
+    "attribute": "{http://www.w3.org/1999/xlink}href",
+    "value": "NIHMS1516098-supplement-Dat.zip"
+  },
+  {
+    "tag": "media",
+    "id": "d36e3724",
+    "attribute": "{http://www.w3.org/1999/xlink}href",
+    "value": "NIHMS1516098-supplement-Sup.pdf"
+  },
+  {
+    "tag": "ext-link",
+    "id": null,
+    "attribute": "{http://www.w3.org/1999/xlink}href",
+    "value": "http://www.sciencemag.org/content/360/6396/1429/suppl/DC1"
+  }
+]

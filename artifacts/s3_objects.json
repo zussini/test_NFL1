@@ -1,0 +1,39 @@
+{
+    "Contents": [
+        {
+            "Key": "PMC6561486.1/PMC6561486.1.json",
+            "LastModified": "2026-06-26T21:09:08+00:00",
+            "ETag": "\"ac66ea4a76ae5c4bbe604334286377d0\"",
+            "ChecksumAlgorithm": [
+                "CRC32"
+            ],
+            "ChecksumType": "FULL_OBJECT",
+            "Size": 596,
+            "StorageClass": "STANDARD"
+        },
+        {
+            "Key": "PMC6561486.1/PMC6561486.1.txt",
+            "LastModified": "2026-06-26T21:09:08+00:00",
+            "ETag": "\"8efa735fbdb7f579dd8ee6d26c8de7da\"",
+            "ChecksumAlgorithm": [
+                "CRC32"
+            ],
+            "ChecksumType": "FULL_OBJECT",
+            "Size": 31694,
+            "StorageClass": "STANDARD"
+        },
+        {
+            "Key": "PMC6561486.1/PMC6561486.1.xml",
+            "LastModified": "2026-06-26T21:09:08+00:00",
+            "ETag": "\"e4c2049e75de61f6dca7031b36907804\"",
+            "ChecksumAlgorithm": [
+                "CRC32"
+            ],
+            "ChecksumType": "FULL_OBJECT",
+            "Size": 108295,
+            "StorageClass": "STANDARD"
+        }
+    ],
+    "RequestCharged": null,
+    "Prefix": "PMC6561486.1/"
+}
