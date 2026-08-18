@@ -1,0 +1,84 @@
+name: p06-sugawa-public-data-fetch
+
+on:
+  push:
+    branches:
+      - tmp/p06-sugawa-fetch-20260818
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-public-data:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp/p06-sugawa-fetch-20260818
+
+      - name: Fetch and validate public supplementary data
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf artifacts work
+          mkdir -p artifacts work
+
+          direct_urls=(
+            "https://pmc.ncbi.nlm.nih.gov/articles/PMC6561486/bin/NIHMS1516098-supplement-Dat.zip"
+            "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6561486/bin/NIHMS1516098-supplement-Dat.zip"
+          )
+
+          found=0
+          for url in "${direct_urls[@]}"; do
+            echo "Trying $url" | tee -a artifacts/fetch.log
+            if curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
+              -A "P06-Sugawa-open-data-pilot/1.0" \
+              -D work/headers.txt "$url" -o work/data_candidate.zip; then
+              if unzip -t work/data_candidate.zip >/dev/null 2>&1; then
+                cp work/data_candidate.zip artifacts/NIHMS1516098-supplement-Dat.zip
+                cp work/headers.txt artifacts/direct_download_headers.txt
+                printf '%s\n' "$url" > artifacts/source_url.txt
+                found=1
+                break
+              fi
+            fi
+          done
+
+          if [[ "$found" -eq 0 ]]; then
+            epmc="https://www.ebi.ac.uk/europepmc/webservices/rest/PMC6561486/supplementaryFiles"
+            echo "Trying $epmc" | tee -a artifacts/fetch.log
+            curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 \
+              -A "P06-Sugawa-open-data-pilot/1.0" \
+              -D work/europepmc_headers.txt "$epmc" -o work/all_supplements.zip
+            unzip -t work/all_supplements.zip
+            mkdir -p work/all_supplements
+            unzip -q work/all_supplements.zip -d work/all_supplements
+            candidate="$(find work/all_supplements -type f -name 'NIHMS1516098-supplement-Dat.zip' -print -quit)"
+            if [[ -z "$candidate" ]]; then
+              echo "Data ZIP not found inside Europe PMC bundle" >&2
+              find work/all_supplements -maxdepth 4 -type f -printf '%P\n' | sort >&2
+              exit 1
+            fi
+            cp "$candidate" artifacts/NIHMS1516098-supplement-Dat.zip
+            cp work/europepmc_headers.txt artifacts/europepmc_download_headers.txt
+            printf '%s\n' "$epmc" > artifacts/source_url.txt
+          fi
+
+          unzip -t artifacts/NIHMS1516098-supplement-Dat.zip
+          unzip -l artifacts/NIHMS1516098-supplement-Dat.zip > artifacts/data_zip_inventory.txt
+          sha256sum artifacts/NIHMS1516098-supplement-Dat.zip > artifacts/NIHMS1516098-supplement-Dat.zip.sha256
+          base64 -w0 artifacts/NIHMS1516098-supplement-Dat.zip > artifacts/NIHMS1516098-supplement-Dat.zip.b64
+          wc -c artifacts/NIHMS1516098-supplement-Dat.zip artifacts/NIHMS1516098-supplement-Dat.zip.b64 > artifacts/byte_counts.txt
+
+      - name: Commit fetched public data receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add artifacts
+          git commit -m "Fetch public Sugawa 2018 supplementary data"
+          git push origin HEAD:tmp/p06-sugawa-fetch-20260818
